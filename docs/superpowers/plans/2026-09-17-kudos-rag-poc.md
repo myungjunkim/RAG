@@ -20,6 +20,7 @@
 - 의존성 추가는 `requirements.in`에 추가 후 `pip-compile --output-file=requirements.txt requirements.in` → `pip install -r requirements.txt`. 이미 설치된 패키지 외 추가 필요 시 해당 Task에 명시.
 - 테스트 실행: 프로젝트 루트에서 `source .venv/bin/activate && pytest --active-profile=local <path> -v`. 단위 테스트는 Ollama·네트워크 없이 통과해야 한다. Ollama가 필요한 테스트는 `@pytest.mark.integration`으로 표시하고 기본 실행에서 제외한다.
 - Chroma 메타데이터 값은 `str|int|float|bool`만 허용된다. `None`은 넣지 않고 리스트는 쉼표 결합 문자열로 저장한다.
+- Chroma 컬렉션 이름은 3~512자(`[a-zA-Z0-9._-]`, 영숫자로 시작·종료)여야 한다(`[검증]` chromadb 1.5.9에서 `"c"` 같은 1글자 이름은 `InvalidArgumentError`). 테스트에서도 `test_col` 같은 이름을 쓴다.
 - 커밋: 각 Task 마지막 Step에서 커밋. 메시지 끝에 `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` 추가.
 - 설정파일(`resources/*.ini`, `openapi_sources.yaml`)의 값은 spec §9 값을 그대로 사용한다. 인증 정보는 커밋하지 않는다.
 
@@ -387,6 +388,12 @@ def test_page_link_becomes_text():
     assert "ri:page" not in md
 
 
+def test_identifiers_are_not_escaped():
+    md = convert_storage_to_markdown("<p>company_seq - affiliated_company_seq 정의 (별표 * 표시)</p>")
+    assert "company_seq - affiliated_company_seq" in md
+    assert "\\_" not in md and "\\*" not in md
+
+
 def _page(page_id, title, parent_id=None, body="<p>본문</p>"):
     return {
         "id": page_id,
@@ -430,8 +437,6 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'src.service.confluence
 `src/service/confluence_document_service.py`:
 ```python
 """Confluence storage format(XHTML) 페이지를 Markdown Document 로 변환한다."""
-import html
-
 from bs4 import BeautifulSoup
 from langchain_core.documents import Document
 from markdownify import markdownify
@@ -483,8 +488,10 @@ def convert_storage_to_markdown(storage_html: str) -> str:
         heading_style="ATX",
         code_language_callback=lambda el: el.get("data-lang") or "",
         strip=["ac:parameter"],
+        # company_seq → company\_seq 처럼 식별자가 깨지면 BM25 매칭이 실패하므로 이스케이프를 끈다
+        escape_underscores=False,
+        escape_asterisks=False,
     )
-    md = html.unescape(md)
     # 빈 줄 3개 이상은 2개로 정리
     lines = [line.rstrip() for line in md.splitlines()]
     cleaned, blank = [], 0
@@ -544,7 +551,7 @@ def build_documents(pages: list[dict], base_url: str) -> list[Document]:
 - [ ] **Step 5: 테스트 통과 확인**
 
 Run: `pytest --active-profile=local test/test_confluence_document_service.py -v`
-Expected: 6 PASSED. 표 변환 assert가 실패하면 markdownify 출력의 셀 공백 형식을 확인해 테스트의 기대 문자열을 실제 출력(`| qa | message-api.qa.hunet.io |`)에 맞춘다 — 표 내용이 보존되는 것이 요구사항이고 정확한 공백 수는 아니다.
+Expected: 7 PASSED. 표 변환 assert가 실패하면 markdownify 출력의 셀 공백 형식을 확인해 테스트의 기대 문자열을 실제 출력(`| qa | message-api.qa.hunet.io |`)에 맞춘다 — 표 내용이 보존되는 것이 요구사항이고 정확한 공백 수는 아니다.
 
 - [ ] **Step 6: 커밋**
 
@@ -1486,7 +1493,7 @@ def split_documents(docs: list[Document], chunk_size: int, chunk_overlap: int) -
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `pytest --active-profile=local test/test_chunk_service.py -v`
-Expected: 6 PASSED
+Expected: 6 PASSED. (`[검증]` `MarkdownHeaderTextSplitter(strip_headers=False)`는 섹션 내 줄을 `"  \n"`(공백 2개 + 개행)으로 잇는다 — 예: `'## 요청  \n요청 설명.'`. 테스트는 부분 문자열만 확인하므로 영향 없다.)
 
 - [ ] **Step 5: 커밋**
 
@@ -1708,7 +1715,7 @@ class VectorStoreRepository:
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `pytest --active-profile=local test/test_vector_store_repository.py -v`
-Expected: 6 PASSED. `count()`가 실패하면 `langchain_chroma` 버전의 내부 속성명을 확인해(`_collection` 또는 `_chroma_collection`) 맞춘다.
+Expected: 6 PASSED. (`[검증]` langchain-chroma 1.1.0에서 `_collection.count()`, `get(include=[...])`, `delete(ids=)`, `delete_collection()`, `as_retriever(search_kwargs={"filter": ...})` 동작 확인함.)
 
 - [ ] **Step 5: 커밋**
 
@@ -1808,7 +1815,7 @@ def _doc(doc_id, content, version=1):
 
 
 def _service(tmp_path):
-    store = VectorStoreRepository(str(tmp_path / "chroma"), "c", DeterministicFakeEmbedding(size=16))
+    store = VectorStoreRepository(str(tmp_path / "chroma"), "test_col", DeterministicFakeEmbedding(size=16))
     manifest = Manifest(str(tmp_path / "manifest.json"))
     return IngestService(store, manifest, chunk_size=1000, chunk_overlap=100), store, manifest
 
@@ -1869,6 +1876,9 @@ Expected: FAIL — `ModuleNotFoundError`
 `src/service/manifest.py`:
 ```python
 """doc_id → fingerprint/chunk_ids 를 기록해 증분 인제스트를 가능하게 하는 매니페스트."""
+# 클래스 안의 set() 메서드가 내장 set 을 가리므로 어노테이션은 지연 평가한다
+from __future__ import annotations
+
 import json
 import os
 from dataclasses import dataclass
@@ -2178,7 +2188,7 @@ def _chunk(chunk_id, text, source="confluence"):
 
 
 def _service(tmp_path):
-    store = VectorStoreRepository(str(tmp_path / "chroma"), "c", DeterministicFakeEmbedding(size=16))
+    store = VectorStoreRepository(str(tmp_path / "chroma"), "test_col", DeterministicFakeEmbedding(size=16))
     store.upsert([
         _chunk("c1#0", "[가이드 > 인증] 인증 서버는 토큰을 발급한다."),
         _chunk("c2#0", "[가이드 > 배포] 배포는 docker-compose 로 한다."),
@@ -2207,7 +2217,8 @@ def test_reload_counts_chunks(tmp_path):
 def test_exact_path_query_hits_openapi_chunk(tmp_path):
     svc, _ = _service(tmp_path)
     results = svc.search("/v1/messages/message 호출 방법")
-    assert results[0].metadata["chunk_id"] == "o1#0"
+    # 가짜 임베딩(해시 기반)의 벡터 점수는 의미가 없으므로 BM25 가 끌어올린 정확 매칭이 상위 k 안에 드는지만 본다
+    assert "o1#0" in [r.metadata["chunk_id"] for r in results]
     assert len(results) <= 3
     assert len({r.metadata["chunk_id"] for r in results}) == len(results)  # 중복 없음
 
@@ -2226,7 +2237,7 @@ def test_top_k_override(tmp_path):
 
 
 def test_empty_store_returns_nothing(tmp_path):
-    store = VectorStoreRepository(str(tmp_path / "empty"), "c", DeterministicFakeEmbedding(size=16))
+    store = VectorStoreRepository(str(tmp_path / "empty"), "test_col", DeterministicFakeEmbedding(size=16))
     svc = RetrieverService(store, 4, 4, 0.5, 0.5, 3)
     assert svc.reload() == 0
     assert svc.search("아무거나") == []
@@ -2238,7 +2249,8 @@ def test_reload_picks_up_new_chunks(tmp_path):
     assert svc.chunk_count == 4
     svc.reload()
     assert svc.chunk_count == 5
-    assert svc.search("그라파나 대시보드", top_k=1)[0].metadata["chunk_id"] == "c3#0"
+    # RRF 는 두 목록(BM25·벡터)에 모두 등장한 문서를 우선하므로, 가짜 임베딩 환경에서는 전체(k=5)를 조회해 포함 여부만 본다
+    assert "c3#0" in [r.metadata["chunk_id"] for r in svc.search("그라파나 대시보드", top_k=5)]
 ```
 
 - [ ] **Step 2: 테스트 실패 확인**
@@ -2332,7 +2344,7 @@ class RetrieverService:
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `pytest --active-profile=local test/test_retriever_service.py -v`
-Expected: 7 PASSED. `test_exact_path_query_hits_openapi_chunk`가 실패하면 fake 임베딩의 무작위성이 원인일 수 있으므로 `_service`의 `bm25_weight`를 0.7로 올려 확인한다(운영 기본값은 ini 값 유지).
+Expected: 7 PASSED. (`[검증]` 계획 작성 시 동일 데이터로 `EnsembleRetriever` 0.5/0.5 실행 결과 `o1#0`이 1위, 0.4/0.6에서는 3위였다 — 가짜 임베딩 환경에서 순위는 가중치에 민감하므로 테스트는 포함 여부만 확인한다.)
 
 - [ ] **Step 5: 커밋**
 
@@ -2847,6 +2859,8 @@ async def health_check():
 
 python main.py --active-profile=local
 """
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -2861,10 +2875,19 @@ __swagger_config = Profile().get_config("swagger")
 __common_config = Profile().get_common_config()
 __STATIC_DIR = f"{global_variable.PROJECT_RESOURCE_DIR}/static"
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # 기동 시 검색 인덱스 로드. 테스트에서 context 를 미리 주입한 경우 재생성하지 않는다
+    if ask_controller.context is None:
+        ask_controller.init_context()
+    yield
+
+
 app = FastAPI(
     title=__swagger_config["title"],
     summary=__swagger_config.get("summary", ""),
     version=__common_config["version"],
+    lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory=__STATIC_DIR), name="static")
 app.include_router(ask_controller.router)
@@ -2873,13 +2896,6 @@ app.include_router(ask_controller.router)
 @app.get("/", include_in_schema=False)
 async def index():
     return FileResponse(f"{__STATIC_DIR}/index.html", media_type="text/html")
-
-
-@app.on_event("startup")
-async def on_startup():
-    # 테스트에서 context 를 미리 주입한 경우 재생성하지 않는다
-    if ask_controller.context is None:
-        ask_controller.init_context()
 
 
 if __name__ == "__main__":
@@ -2899,18 +2915,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `pytest --active-profile=local test/test_ask_controller.py -v`
-Expected: 8 PASSED. `@app.on_event`가 deprecation 경고를 내면 무시한다(기존 프로젝트 패턴 유지). 경고가 오류로 처리되면 `lifespan` 컨텍스트 매니저로 대체:
-```python
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    if ask_controller.context is None:
-        ask_controller.init_context()
-    yield
-
-app = FastAPI(..., lifespan=lifespan)
-```
+Expected: 8 PASSED. (`[검증]` FastAPI 0.141에서 `@app.on_event`는 deprecated 경고를 내므로 `lifespan`을 사용한다. 계획 작성 시 이 코드로 드라이런하여 8개 통과 확인함.)
 
 - [ ] **Step 5: 서버 기동 확인(Ollama 준비된 경우)**
 
@@ -3243,7 +3248,7 @@ pytestmark = pytest.mark.integration
 def client(tmp_path):
     if not llm_factory.ping_ollama():
         pytest.skip("Ollama 미기동")
-    store = VectorStoreRepository(str(tmp_path / "chroma"), "it", llm_factory.create_embeddings())
+    store = VectorStoreRepository(str(tmp_path / "chroma"), "test_it", llm_factory.create_embeddings())
     spec = json.loads((Path(__file__).parent / "fixtures" / "openapi_sample.json").read_text(encoding="utf-8"))
     docs = build_documents(spec, OpenApiSource("message-api", "https://x/openapi.json", "https://x/docs"))
     IngestService(store, Manifest(str(tmp_path / "m.json")), 1000, 150).ingest_documents(
