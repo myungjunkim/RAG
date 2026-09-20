@@ -1,0 +1,7 @@
+sources:
+  - name: general-chatbot-api
+    spec_url: https://qa-general-chatbot-api.hunet.ai/openapi.json
+    docs_url: https://qa-general-chatbot-api.hunet.ai/docs
+  - name: message-api
+    spec_url: https://message-api.qa.hunet.io/openapi.json
+    docs_url: https://message-api.qa.hunet.io/docs
