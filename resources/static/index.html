@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KUDOS RAG</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --line:#e3e6ea; --text:#1f2328; --muted:#656d76; --accent:#0969da; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; }
+  header h1 { font-size:16px; margin:0; }
+  #health { font-size:12px; color:var(--muted); }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; }
+  #log { display:flex; flex-direction:column; gap:12px; min-height: 50vh; }
+  .msg { padding:12px 14px; border-radius:10px; background:var(--card); border:1px solid var(--line); white-space:pre-wrap; line-height:1.55; }
+  .msg.q { background:#e7f0ff; border-color:#c9dcf7; align-self:flex-end; max-width:80%; }
+  .sources { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:8px; margin-top:8px; }
+  .src { font-size:12px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#fafbfc; }
+  .src a { color:var(--accent); text-decoration:none; font-weight:600; }
+  .src .tag { display:inline-block; padding:1px 6px; border-radius:6px; font-size:11px; margin-left:4px; background:#ddf4ff; color:#0550ae; }
+  .src .tag.openapi { background:#dafbe1; color:#116329; }
+  .src .snip { color:var(--muted); margin-top:4px; max-height: 60px; overflow:hidden; }
+  form { position:sticky; bottom:0; margin-top:16px; padding:12px 0; background:var(--bg); display:flex; gap:8px; }
+  select, input, button { font: inherit; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--card); }
+  input { flex:1; }
+  button { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; }
+  button:disabled { opacity:.6; cursor:default; }
+  .err { color:#cf222e; }
+</style>
+</head>
+<body>
+<header>
+  <h1>KUDOS RAG</h1>
+  <span id="health" aria-live="polite">상태 확인 중…</span>
+</header>
+<main>
+  <div id="log"></div>
+  <form id="form">
+    <select id="source" title="검색 대상" aria-label="검색 대상 소스">
+      <option value="all">전체</option>
+      <option value="confluence">Confluence</option>
+      <option value="openapi">OpenAPI</option>
+    </select>
+    <input id="question" placeholder="예: 메시지 등록 API 호출 방법 알려줘" autocomplete="off" aria-label="질문" required>
+    <button id="send" type="submit">질문</button>
+  </form>
+</main>
+<script>
+const log = document.getElementById('log');
+const form = document.getElementById('form');
+const input = document.getElementById('question');
+const sourceSel = document.getElementById('source');
+const sendBtn = document.getElementById('send');
+
+async function refreshHealth() {
+  try {
+    const r = await fetch('/check');
+    const h = await r.json();
+    document.getElementById('health').textContent =
+      `상태: ${h.status} · Ollama ${h.ollama ? '연결됨' : '끊김'} · 청크 ${h.chunk_count}개`;
+  } catch (e) {
+    document.getElementById('health').textContent = '상태 확인 실패';
+  }
+}
+refreshHealth();
+
+function addMessage(cls, text) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + cls;
+  el.textContent = text;
+  log.appendChild(el);
+  el.scrollIntoView({ block: 'end' });
+  return el;
+}
+
+function renderSources(container, sources) {
+  if (!sources.length) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'sources';
+  for (const s of sources) {
+    const card = document.createElement('div');
+    card.className = 'src';
+    const a = document.createElement('a');
+    a.href = s.url; a.target = '_blank'; a.rel = 'noopener';
+    a.textContent = `[${s.index}] ${s.title}`;
+    const tag = document.createElement('span');
+    tag.className = 'tag ' + s.source; tag.textContent = s.source;
+    const snip = document.createElement('div');
+    snip.className = 'snip'; snip.textContent = s.snippet;
+    card.append(a, tag, snip);
+    wrap.appendChild(card);
+  }
+  container.appendChild(wrap);
+}
+
+// 422 는 detail 이 [{loc, msg, type}] 배열, 503/504 는 문자열이다
+function formatDetail(detail, fallback) {
+  if (Array.isArray(detail)) return detail.map(d => d.msg).join(', ');
+  return detail || fallback;
+}
+
+// POST 기반 SSE: EventSource 는 GET 만 지원하므로 fetch 스트림을 직접 파싱한다
+async function ask(question, source) {
+  const answerEl = addMessage('a', '');
+  const res = await fetch('/v1/ask/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, source }),
+  });
+  if (!res.ok) {
+    const detail = formatDetail((await res.json().catch(() => ({}))).detail, res.statusText);
+    answerEl.classList.add('err'); answerEl.textContent = `오류 ${res.status}: ${detail}`;
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf('\n\n')) >= 0) {
+      const block = buffer.slice(0, idx); buffer = buffer.slice(idx + 2);
+      const evLine = block.split('\n').find(l => l.startsWith('event: '));
+      const dataLine = block.split('\n').find(l => l.startsWith('data: '));
+      if (!evLine || !dataLine) continue;
+      const event = evLine.slice(7);
+      const data = JSON.parse(dataLine.slice(6));
+      if (event === 'token') { answerEl.textContent += data; answerEl.scrollIntoView({ block: 'end' }); }
+      else if (event === 'sources') renderSources(answerEl, data);
+      else if (event === 'error') { answerEl.classList.add('err'); answerEl.textContent = data; }
+    }
+  }
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const q = input.value.trim();
+  if (!q) return;
+  addMessage('q', q);
+  input.value = '';
+  sendBtn.disabled = true;
+  input.disabled = true;
+  try { await ask(q, sourceSel.value); }
+  catch (err) { addMessage('a err', '요청 실패: ' + err.message); }
+  finally { sendBtn.disabled = false; input.disabled = false; input.focus(); }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<h1>인증 서버 연동</h1>
+<p>본 문서는 <strong>GW</strong> 연동 절차를 설명한다.</p>
+<ac:structured-macro ac:name="toc"><ac:parameter ac:name="maxLevel">2</ac:parameter></ac:structured-macro>
+<h2>요청 예시</h2>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">python</ac:parameter><ac:plain-text-body><![CDATA[import requests
+requests.post("/v1/messages/message", json={"a": 1})]]></ac:plain-text-body></ac:structured-macro>
+<h2>환경 정보</h2>
+<table><tbody>
+<tr><th>환경</th><th>호스트</th></tr>
+<tr><td>qa</td><td>message-api.qa.hunet.io</td></tr>
+</tbody></table>
+<ac:structured-macro ac:name="info"><ac:rich-text-body><p>토큰은 헤더로 전달한다.</p></ac:rich-text-body></ac:structured-macro>
+<p>참고: <ac:link><ri:page ri:content-title="회원 · 인증(IAM) 서비스 정책" /><ac:plain-text-link-body><![CDATA[IAM 정책]]></ac:plain-text-link-body></ac:link></p>

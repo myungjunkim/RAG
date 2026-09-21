@@ -1,0 +1,56 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "Message Management API", "version": "1.0"},
+  "paths": {
+    "/v1/messages/message": {
+      "post": {
+        "tags": ["message 등록"],
+        "summary": "Add Message",
+        "description": "메시지를 등록한다.",
+        "operationId": "add_message",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MessagePostRequest"}}}
+        },
+        "responses": {
+          "200": {"description": "Successful Response",
+                  "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MessageResponse"}}}},
+          "422": {"description": "Validation Error"}
+        }
+      }
+    },
+    "/v1/messages/{service_key}/{user_key}": {
+      "get": {
+        "tags": ["message 조회"],
+        "summary": "List Messages",
+        "parameters": [
+          {"name": "service_key", "in": "path", "required": true, "schema": {"type": "string"}, "description": "서비스 키"},
+          {"name": "user_key", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "last_session_only", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}
+        ],
+        "responses": {"200": {"description": "OK"}}
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "MessagePostRequest": {
+        "type": "object",
+        "required": ["service_key", "original_message"],
+        "properties": {
+          "service_key": {"type": "string", "description": "서비스 키"},
+          "original_message": {"type": "string"},
+          "custom": {"type": "object", "additionalProperties": true},
+          "children": {"type": "array", "items": {"$ref": "#/components/schemas/MessagePostRequest"}}
+        }
+      },
+      "MessageResponse": {
+        "type": "object",
+        "properties": {
+          "seq": {"type": "integer"},
+          "request": {"$ref": "#/components/schemas/MessagePostRequest"}
+        }
+      }
+    }
+  }
+}
