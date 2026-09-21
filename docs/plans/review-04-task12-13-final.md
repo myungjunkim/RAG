@@ -166,3 +166,9 @@ def has_model(name: str) -> bool:
 5. `requirements.in` 3건, 계획서 동기화, 스펙 §7 문구, `.serena/` gitignore.
 
 **PoC 종결 (2026-09-21).** 에이전트 작업 완료. 커밋·브라우저 확인·Confluence 인제스트는 사용자 영역.
+
+### 종결 후 후속 1: `main.py` 실행 시 "라이브러리 미설치" 보고 (2026-09-21)
+- Validator 진단 `[검증]`: venv 안 정상(`pip check` 이상 없음, requirements.txt 120개 누락·불일치 0), venv 밖 시스템 `python3`에 `fastapi` 없음 → **venv 미활성화가 원인**. 설치 불필요, 미수행.
+- 추가 관찰: venv 미활성화 시 `python` 명령 자체가 없음(`python3`만) → README 실행 예시(`python main.py …`)가 그대로 실패.
+- **조치(Builder)**: README "인제스트"·"서버"·"테스트" 절 코드 블록 첫 줄에 `source .venv/bin/activate` 추가, "개발 환경" 절 끝에 "이하 모든 명령은 venv 활성화 상태(프롬프트 `(.venv)`)를 전제한다" 한 문장. 그 외 변경 없음.
+- Builder 완료: README 4곳(44~45행 안내 문장, 62·89·116행 activate). 코드·설정·테스트 미변경. 리드 diff 확인 일치. **후속 1 종결.**

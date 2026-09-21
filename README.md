@@ -41,6 +41,9 @@ pip install -r requirements.txt
 운영 프로파일이 필요하면 `resources/config_<profile>.ini` 를 만들고 `--active-profile=<profile>` 로
 선택한다(예: `host=0.0.0.0`, `reload=False`).
 
+이하 모든 명령은 가상환경이 활성화된 상태(프롬프트 앞 `(.venv)`)를 전제한다. 활성화하지 않으면
+`python` 명령이 없거나 `ModuleNotFoundError` 가 난다.
+
 ### 의존성 메모 (미결정 사항)
 
 아래 3개는 코드가 **직접 import** 하지만 `requirements.in` 에는 없고 다른 패키지의 전이 의존성으로만
@@ -56,6 +59,7 @@ pip install -r requirements.txt
 ## 인제스트
 
 ```bash
+source .venv/bin/activate
 python ingest.py --active-profile=local --source all        # confluence + openapi 증분
 python ingest.py --active-profile=local --source openapi    # 특정 소스만
 python ingest.py --active-profile=local --full              # 전체 재구축
@@ -82,6 +86,7 @@ OpenAPI 대상은 `resources/openapi_sources.yaml` 에 추가한다. **`name` �
 ## 서버
 
 ```bash
+source .venv/bin/activate
 python main.py --active-profile=local
 ```
 
@@ -108,6 +113,7 @@ UI 렌더링은 자동 테스트로 확인하지 않으므로 아래를 육안�
 ## 테스트
 
 ```bash
+source .venv/bin/activate
 pytest --active-profile=local                                  # 단위 테스트 (Ollama 불필요)
 pytest --active-profile=local -m integration                   # 통합 테스트 (Ollama 필요)
 python -m eval.run_eval --active-profile=local --k 6           # 검색 품질 hit@6 (기준 80%)
