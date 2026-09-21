@@ -115,7 +115,7 @@ class RagService:
 - [x] 결과 없음 시 LLM 미호출(동기 `ExplodingModel` + 스트림 `ExplodingStreamModel`)
 - [x] `ask_stream` 이벤트 순서·빈 조각 미방출 (`["답","","변",""]` → token 2개)
 - [x] `src/`에서 `ChatOllama` 참조는 `llm_factory.py`만
-- [ ] 통합 테스트 — **미실행(`qwen3:14b` 미설치, 404)**. `from_profile → create_chat_model` 경로는 요청 도달로 정상 확인
+- [x] 통합 테스트 — `qwen3:14b` 설치 후 1 passed(3.3초): answer `str`, `<think>` 부재, 인용 `[1]`. **조건 해제 (2026-09-21, review-04 2단계)**
 - [x] 구현이 이 문서의 인터페이스와 일치 (계획서 Step 3과 IDENTICAL, 프롬프트 무변경)
 
 ## Validator 비차단 의견에 대한 리드 판단 (2026-09-21)

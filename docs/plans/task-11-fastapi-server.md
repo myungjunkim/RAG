@@ -139,7 +139,7 @@ LLM_ERRORS: tuple[type[Exception], ...] = (httpx.HTTPError, ConnectionError, Oll
 - [x] 기동 시 `init_context()` → `reload()` 호출, `chunk_count`가 실제 청크 수와 일치(`test_lifespan_initializes_context_and_calls_reload`)
 - [x] `ollama` import는 `llm_factory.py`만
 - [x] 구현이 이 문서의 인터페이스와 일치
-- [ ] **조건부**: 모델 설치 후 full 경로 실기동(`/check` ok + 실제 질의 응답)
+- [x] full 경로 실기동 — `/check` ok·chunk 199, `POST /v1/ask` 13.0초(첫 호출 30.4초) 답변에 `POST /v1/messages/message`·인용·필수 필드명, 스트림 350프레임 순서 정상. **조건 해제 (2026-09-21, review-04 2단계)**
 
 ## 리드 결정 3 실측 결과 (Validator, `[추측]` → `[검증]`)
 

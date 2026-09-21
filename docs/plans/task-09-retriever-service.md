@@ -115,7 +115,7 @@ class RetrieverService:
 - [x] 미지의 source·빈 인덱스·reload 전 → `[]`, 결과 중복 없음, `len <= k`
 - [x] reload가 삭제된 청크를 반영 (4 → 3)
 - [x] import 경로 Global Constraint 준수 (`__module__` 확인)
-- [ ] 실데이터 sanity — **`[미확인]`** (`data/chroma` 청크 0, `bge-m3` 미설치). 모델 설치 후 ③ 순서로 재실행
+- [x] 실데이터 sanity — 199청크에서 chunk_count 일치, 세 질의 모두 기대 문서 2위. **조건 해제 (2026-09-21, review-04 1단계).** 1위 정확도는 Task 13 튜닝 대상
 - [x] 구현이 이 문서의 인터페이스와 일치 (계획서 Step 3과 IDENTICAL)
 
 ## Validator 비차단 의견에 대한 리드 판단 (2026-09-21)

@@ -176,7 +176,7 @@ def get_logger(cls, name: str) -> logging.Logger:
 - [x] 단위 테스트 전부 PASS (manifest 11 + ingest_service 18 + logger 7 교체, 전체 195 passed)
 - [x] 전체 green, 소켓 차단 상태 통과
 - [x] `GlobalLogger`가 pytest 안에서도 실제 파일에 기록, 기존 핸들러 보존, 중복 부착 없음, caplog 동시 동작 — **리뷰 1 이관 항목 해소**
-- [ ] `ingest.py --source openapi` 실데이터 실행 — **미실행(`bge-m3` 미설치, 404)**. 스펙 다운로드·렌더까지는 진행됨. 재실행 변경 0도 보류
+- [x] `ingest.py --source openapi` 실데이터 실행 — `bge-m3` 설치 후 **추가 199 / 청크 199 / 8.0초**, 재실행 **추가 0 / 갱신 0 / 0.65초**, 실인제스트 중 서드파티 로그 0줄. **조건 해제 (2026-09-21, review-04 1단계).** Confluence 소스는 토큰 필요 → 사용자 실행
 - [x] 실행 후 `logs/app.log`에 인제스트 로그 존재 (`INFO [ingest] --full: ...`)
 - [x] 실패 소스의 기존 문서 보존(removable) 확인
 - [x] 구현이 이 문서의 인터페이스와 일치 (manifest/ingest_service/ingest.py IDENTICAL, logger = 리드 결정 1)

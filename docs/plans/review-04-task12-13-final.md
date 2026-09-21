@@ -117,3 +117,52 @@ def has_model(name: str) -> bool:
 - 전체 **307 passed / 5 deselected** (소켓 차단 정순·역순 포함). `-m integration`: 1 passed / 4 skipped(모델 미설치 사유 메시지에 `ollama pull` 안내 포함).
 - 미커밋: Task 1~13 산출물 전체 + 리뷰 1~4 변경분 + `docs/plans/` 전체.
 - 모델 설치 후 Validator 재실행 순서: ① Task 7 임베딩 통합 2 → ② Task 8 `ingest.py --source openapi`(+재실행 변경 0, httpx 노이즈 부재) → ③ Task 9 sanity → ④ `/v1/reload` 지연 측정 [여기까지 `bge-m3`] → ⑤ Task 10 LLM 통합 → ⑥ Task 11 full 실기동 → ⑦ Task 13 `run_eval`·`test_integration_ask` [`qwen3:14b`]. 사용자 알림 시 리드가 한 번에 지시.
+
+## 모델 설치·재실행 (2026-09-21 사용자 지시 "올라마 설정해줘")
+
+사용자가 모델 다운로드를 명시적으로 지시 → 리드가 **Validator에게 위임**(리드는 실행 도구 없음, Builder는 코드 담당). 절차:
+1. `ollama pull bge-m3` → `ollama list` 확인 → 재실행 ①~④ 수행·보고
+2. `ollama pull qwen3:14b`(약 9GB, 시간 소요) → 재실행 ⑤~⑦ 수행·보고
+- 제약: `resources/config_local.ini` 변경 금지, Confluence 인제스트(토큰 필요)는 수행하지 않음(`--source openapi`만), `data/`는 실데이터 인제스트 결과로 남김, 서버 기동 시 종료 필수, 커밋 금지.
+- 코드 결함 발견 시 RETURN TO BUILDER가 아니라 **리드에게 보고**(티켓 재개 판단은 리드).
+
+### 1단계 결과 (2026-09-21, `bge-m3` 설치 후) — ①~④ 전부 PASS `[검증]`
+- 모델: `bge-m3:latest` 1.08GB, embedding_length 1024, context 8192.
+- ① Task 7 임베딩 통합 3 passed(ping·1024차원·3000자). **Task 7 조건 해제.**
+- ② Task 8 `ingest.py --source openapi`: 1회차 추가 199 / 청크 199 / 8.0초(message-api 182 + general-chatbot-api 17), 2회차 추가 0 / 갱신 0 / 0.65초. `app.log` 2줄, 서드파티 라인 0 → 리뷰 2 A-2 `[미확인]` 해소. **Task 8 조건 해제(OpenAPI 부분; Confluence는 토큰 필요).**
+- ③ Task 9 sanity: chunk_count 199 = manifest, "메시지 등록 API"·`/v1/messages/message`·자연어 질의 모두 기대 문서 **2위**(0.02~0.06초). **Task 9 조건 해제.** 관찰: 1위는 `POST /v1/dialogs/dialog`·`GET /v1/messages/message/{seq}` → Task 13 튜닝 대상(가중치, `id_key`).
+- ④ `/v1/reload` 평균 0.018초(199청크), reload 중 `/check` 0.004초. `reopen()` 비용 무시 수준 → 리뷰 3 비차단 3 해소. `[추측]` 수천 청크에서는 BM25 재구성이 지배적.
+- Q3 `expected_doc_ids` 둘 다 manifest에 실존 → 리뷰 4 S-1 리스크 없음(README 절차는 유지).
+- 리드: 2단계(`qwen3:14b` → ⑤~⑦) 지시.
+
+### 2단계 중간 (다운로드 대기 중, `bge-m3`만으로 선행) `[검증]`
+- ⑦ 일부: `run_eval --k 6` → **hit@6 = 3/3 = 100%**, 종료 0, 1.7초. **계획서 완료 기준 ④ 충족** — 단 3문항(OpenAPI)이라 통계적 의미 제한, Confluence 문항 추가 후가 실질 평가(리드 결정 2).
+- `-m integration`: 3 passed(ping·임베딩 2) / 2 skipped(`qwen3:14b` 필요) / 0 error — 리뷰 4 B-1 가드가 모델 단위로 정확히 동작.
+- `qwen3:14b` 다운로드 12%, 속도 변동(0.27~5.4MB/s), 잔여 `[미확인]`(약 40분 추정).
+- 60분 시점 22%(2.0GB), 평균 0.55MB/s, 진행률 두 번 후퇴(재시도로 진척 손실 `[추측]`). Validator가 선택지 3개 제시(대기 / 중단 후 사용자 재시도 / `qwen3:4b` 대체).
+- **사용자 결정: 2번 — pull 중단, 사용자가 직접 다운로드.** 리드가 Validator에게 중단 지시. 받은 2GB는 Ollama 캐시에 보존되어 재pull 시 이어받음(`[추측]`, Ollama 동작). `qwen3:14b` 설치가 확인되면 ⑤~⑦ 재지시.
+- Validator 중단 처리 완료(24% 시점, 프로세스 종료, 오류 0, `bge-m3` 온전, partial 5.6GB 보존).
+- **2026-09-21 사용자: `qwen3:14b` 설치 완료 알림.** 리드가 Validator에게 ⑤~⑦ 지시.
+- Validator 정정 `[검증]`: `ollama list`에 `qwen3:14b` 9.3GB 등록됨. CLI pull 프로세스를 종료한 뒤에도 다운로드가 완료된 것으로 관측 — `[추측]` 블롭 전송은 `ollama serve`가 수행하므로 CLI 종료가 서버 측 전송을 멈추지 않았고, "표시 2.3GB vs 블롭 5.6GB" 불일치와 일관됨(사용자가 직접 pull을 재실행했을 가능성과 구분 불가). 직전 "중단 완료" 보고는 CLI 기준으로만 정확. ⑤~⑦ 착수.
+
+### 2단계 결과 (2026-09-21, `qwen3:14b` 설치 후) — ⑤~⑦ 전부 PASS `[검증]`
+- ⑤ Task 10 LLM 통합 1 passed(3.3초): answer `str`, `<think>` 부재(`reasoning=False` 실동작), 인용 `[1]` 포함. **Task 10 조건 해제.**
+- ⑥ Task 11 full 실기동: `/check` `{"status":"ok","ollama":true,"chunk_count":199}`. `POST /v1/ask`(openapi, "메시지 등록 API 호출 방법") 1회차 30.4초(모델 로딩) / 2회차 13.0초, answer에 `POST /v1/messages/message`·`[2]`·`[3]` 인용, sources 6건, **필수 파라미터 필드명(`service_key`, `page_key`, `chatbot_key`, `user_id`, `original_message`) 정확 추출** — Task 4 중첩 `$ref` 수정의 직접 효과. `/v1/ask/stream` 350프레임(token 348 → sources → done), 조립 answer 855자 = 동기 응답과 동일. 포트 해제, `app.log` 서드파티 0. **Task 11 조건 해제.**
+- ⑦ `-m integration` **5 passed**, `run_eval` hit@6 = 3/3 = 100%, 전체 **307 passed**(소켓 차단 동일), 테스트 로그 격리 유지.
+
+### 최종 판정 — 계획서 전체 완료 기준
+| # | 기준 | 판정 |
+|---|---|---|
+| 1 | 단위 테스트 전체 통과(Ollama 없이) | **충족** |
+| 2 | `ingest.py` 인제스트 + 재실행 변경 0 | **충족**(OpenAPI 199청크). Confluence는 사용자 토큰 영역 |
+| 3 | UI 스트리밍 답변 + 출처 카드 | **서버·API 층 충족**(SSE 348토큰·sources 6). 브라우저 육안 `[미확인]` — 사용자 |
+| 4 | `run_eval` hit@6 ≥ 80% | **충족**(100%, 3문항 — 문항 확충 후 재측정 권장) |
+
+### 후속 후보 (판정 무관, 사용자 판단)
+1. README에 "첫 질의는 모델 로딩으로 30초 안팎 걸릴 수 있음" 한 줄(Validator 비차단 1). 기동 시 워밍업은 PoC에 과함.
+2. 답변이 v1·v2 엔드포인트를 함께 제시 — 검색 결과 그대로의 정확한 동작. 실사용 피드백 후 프롬프트에 "최신 버전 우선" 규칙 검토.
+3. sources 1위가 `POST /v1/dialogs/dialog`(기대 문서 2위) — 순위 튜닝: `bm25-weight`/`vector-weight`, RRF `id_key="chunk_id"`(리뷰 3 인계). Confluence 문항 포함 평가 후.
+4. Task 12 개선 후보: `error` 시 부분 답변 유지, 빈 답변 버블.
+5. `requirements.in` 3건, 계획서 동기화, 스펙 §7 문구, `.serena/` gitignore.
+
+**PoC 종결 (2026-09-21).** 에이전트 작업 완료. 커밋·브라우저 확인·Confluence 인제스트는 사용자 영역.

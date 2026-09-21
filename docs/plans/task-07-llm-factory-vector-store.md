@@ -135,7 +135,7 @@ LLM 실호출(`create_chat_model().invoke`) 통합 테스트는 이 티켓에 �
 
 - [x] 단위 테스트 전부 PASS (계획서 6 + llm_factory 단위 5 + Validator 11 = 22)
 - [x] 전체 green (165 passed / 3 deselected), 소켓 차단 상태 통과 — 텔레메트리 외부 연결 없음 실증
-- [ ] 통합 테스트(Ollama 기동) — **ping PASS / 임베딩 1024차원·3000자 2건 미실행(모델 미설치, 404)**. `ollama pull bge-m3` 후 재실행 필요
+- [x] 통합 테스트(Ollama 기동) — `bge-m3` 설치 후 3 passed(ping·1024차원·3000자). **조건 해제 (2026-09-21, review-04 1단계)**
 - [x] 텔레메트리 비활성화 반영 (런타임 `get_settings()` 확인)
 - [x] 빈 문자열 metadata 저장·조회 확인 (리뷰 1 기록 10번 해소)
 - [x] `src/`에서 `ChatOllama`/`OllamaEmbeddings` 참조는 `llm_factory.py`만
