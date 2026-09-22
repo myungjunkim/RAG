@@ -100,7 +100,7 @@ def has_model(name: str) -> bool:
 
 1. `[fastapi] host=0.0.0.0`, `reload=False` 운영 프로파일 ini
 2. `[ollama] base-url` → compose 서비스명. 모델 2개(~10GB) pull을 ollama 컨테이너 기동에 포함
-3. `data/`·`logs/` 볼륨 + 컨테이너 UID 쓰기 권한
+3. `data/`·`logs/` 볼륨 + 컨테이너 UID 쓰기 권한. **메모리: 13.8k 청크 기준 워커 RSS 약 1.2GB(피크 포함) → 한도 2GB 이상 권장**(후속 4 실측). `data/chroma` 183MB
 4. `CONFLUENCE_API_TOKEN` secret, ini `email`
 5. Python 3.12, 단일 uvicorn 워커, UI 경로 하드코딩(I-4)
 6. `--full` ↔ `/v1/reload` 사이 500 창 (README A-1-4로 안내)
@@ -172,3 +172,35 @@ def has_model(name: str) -> bool:
 - 추가 관찰: venv 미활성화 시 `python` 명령 자체가 없음(`python3`만) → README 실행 예시(`python main.py …`)가 그대로 실패.
 - **조치(Builder)**: README "인제스트"·"서버"·"테스트" 절 코드 블록 첫 줄에 `source .venv/bin/activate` 추가, "개발 환경" 절 끝에 "이하 모든 명령은 venv 활성화 상태(프롬프트 `(.venv)`)를 전제한다" 한 문장. 그 외 변경 없음.
 - Builder 완료: README 4곳(44~45행 안내 문장, 62·89·116행 activate). 코드·설정·테스트 미변경. 리드 diff 확인 일치. **후속 1 종결.**
+
+### 종결 후 후속 2: Confluence 인제스트 준비 — ini 이메일 입력 (2026-09-22)
+- 사용자 명시 지시("2단계 니가 해줘", 이메일 `jun0357@hunet.co.kr`) → 설정 파일 변경 허가로 간주(CLAUDE.md §6). Builder에게 `resources/config_local.ini` `[confluence] email=` 한 값만 입력 지시. `api-token=`은 비워 둠(토큰은 사용자 셸 `CONFLUENCE_API_TOKEN`).
+- 주의: 추적 파일에 이메일이 들어가므로 커밋 포함 여부는 사용자 판단(README 커밋 주의 절).
+- Builder 완료 `[검증]`: diff 1줄(`email=` → `email=jun0357@hunet.co.kr`), `Profile().get_config('confluence')['email']` 반영, `api-token` 빈 값 유지. 인제스트 미실행(토큰은 사용자 셸). **후속 2 종결.** 이후 3·4단계(토큰 export, `ingest.py --source confluence`)는 사용자.
+
+### 종결 후 후속 3: ini를 git에서 제외 + 템플릿·README (2026-09-22)
+- 배경: 원격이 GitHub(`myungjunkim/RAG`, 공개 여부 `[미확인]`). `config_local.ini`에 이메일이 들어가 커밋 제외 필요. 사용자 지시: "ini 파일 git에서 제외, README에 ini 설정 방법 추가".
+- **설계**: 추적 파일 `resources/config_local.ini`를 gitignore하고, 커밋용 템플릿 `resources/config_local.ini.example`(현재 내용 그대로, `email=` 빈 값)을 둔다. `Profile`은 여전히 `config_{profile}.ini`를 읽으므로 코드 변경 없음. 새 클론은 `cp`로 생성 후 `email` 입력.
+- 기각: ini 자체를 커밋하고 이메일만 env로 — 다른 로컬값(포트·모델명)도 개인별로 달라질 수 있어 "로컬 ini = 미추적, 템플릿 = 추적" 관례가 단순.
+- **Builder 작업**: (1) `resources/config_local.ini.example` 생성 — 현재 `config_local.ini` 내용에서 `email=`만 빈 값. (2) `.gitignore`에 `resources/config_local.ini` 추가(사용자 허가된 설정 변경). (3) README "사전 준비"에 절 추가: `cp resources/config_local.ini.example resources/config_local.ini` → `[confluence] email` 입력 → 이 파일은 git 미추적·커밋 안 됨 → 다른 프로파일도 같은 방식. (4) `python -c "import main"`·전체 pytest 통과 확인. 커밋 금지.
+- **사용자 작업(git)**: 추적 해제는 리드·Builder가 하지 않음 →
+  `git rm --cached resources/config_local.ini` (작업 트리 파일은 남음) → 이후 커밋에 `.gitignore`, `.example`, README 포함. 로컬 `config_local.ini`는 그대로 사용.
+- Builder 완료 `[검증]`: `.example` 생성(ini와 email 1줄만 차이), `.gitignore` +1, README 사전 준비 2번 신설(설정 파일)·3번 토큰. `import main` OK. **테스트 2건 실패** — 후속 2(이메일 입력)의 여파: `test_profile.py::test_confluence_credentials_are_not_committed`, `test_confluence_repository.py::test_from_profile_falls_back_to_ini_token_without_env` 모두 `email == ""` 단언. Builder가 후속 2 당시 전체 pytest 미실행(확인 누락 자인). `git check-ignore`로 `.gitignore`만으로는 추적 해제 안 됨 재확인 → 사용자 `git rm --cached` 선행 필수.
+- **리드 결정: (a)** — "자격 증명 미커밋" 테스트의 대상을 커밋되는 템플릿으로 옮긴다. 로컬 ini의 `email`은 개인 설정이므로 단언 제외. 근거: 후속 3으로 불변식이 "추적 파일(`.example`)에 이메일·토큰이 없다"로 바뀌었고, (b)는 템플릿 오염을 잡지 못한다.
+  **Validator 작업**: (1) `test_profile.py::test_confluence_credentials_are_not_committed` → `resources/config_local.ini.example`을 `configparser`로 읽어 `[confluence] email == ""`·`api-token == ""` 단언(로컬 ini는 `api-token == ""`만 유지). (2) `test_confluence_repository.py::test_from_profile_falls_back_to_ini_token_without_env` → `email` 단언 제거, `api_token == ""`(ini 토큰 빈 값 폴백) 유지. (3) 전체 green 확인. 커밋 금지.
+- Validator 완료 + **ESCALATE**: 지시 2건 수정(`test_ini_template_has_no_credentials`, `test_local_ini_keeps_api_token_empty`, 폴백 테스트 email 단언 제거). 추가로 `git ls-files`로 추적 여부를 확인하는 `test_local_ini_is_not_tracked_by_git`를 넣었고 현재 실패(추적 중). 308 passed / 1 failed.
+- **리드 결정: 추적 여부 테스트 제거.** 테스트가 `git` 바이너리·저장소 상태에 의존하면 git 없는 환경(Docker 이미지·tarball·얕은 체크아웃)에서 코드와 무관하게 실패한다. 자격 증명 보호는 템플릿 테스트 + `.gitignore` + README + 사용자 `git rm --cached` 1회로 충분. 추적 상태는 저장소 관리 사항이며 이 문서와 README에 명시한다. Validator에게 제거 지시, 기대 308 passed.
+- 사용자 필수 조치(재확인): `git rm --cached resources/config_local.ini` — 이 전에 `git add -A`/`commit -a`를 하면 이메일이 커밋됨. `[검증]` 과거 이력(`6b5295b`)에는 `email=` 빈 값만 있어 이력 정리 불필요.
+- Validator 완료 `[검증]`: 추적 여부 테스트 제거, 자격 증명 테스트 3건 최종 구성(템플릿 무자격증명 / 로컬 ini api-token 빈 값 / 폴백). **전체 308 passed / 5 deselected**(소켓 차단 동일), 통합 5 passed. **후속 3 종결**(사용자 `git rm --cached` 대기).
+
+### 종결 후 후속 4: Confluence 실데이터 인제스트 완료 → 대규모 검증 (2026-09-22)
+- 사용자 실행 결과 `[검증]`(사용자 출력): `[confluence] 추가 1494 / 갱신 0 / 삭제 0 / 청크 13613`, 컬렉션 청크 수 **13,812**(OpenAPI 199 + Confluence 13,613). **계획서 완료 기준 ② Confluence 부분 충족**(재실행 변경 0은 사용자 재실행으로 확인 예정).
+- 규모 관찰: 계획서 가정 "200+ 페이지"의 약 7배. 청크 13.8k는 `[추측]` BM25 인메모리(rank-bm25) 재구성·메모리에 부담이 될 수 있음 — 기동 시간·`/v1/reload`·검색 지연을 실측해야 함(Task 9 명세의 "기동 시 재구성 1초 내" `[추측]` 재검증).
+- **Validator 작업(토큰 불필요, Chroma 데이터 사용)**: (1) `init_context()`/`reload()` 소요 시간·프로세스 메모리(RSS) 측정, (2) `/v1/reload` 3회 지연, (3) 검색 지연 — 소스 all/confluence/openapi 각각 3질의(0.5초 초과 시 기록), (4) 일반 질의 샘플("인증 서버 연동", "배포 절차", "회원 인증 IAM 정책")의 상위 3 title·breadcrumb 보고(품질은 사용자 판단), (5) 실기동 `/check`가 `ok`·13812, `POST /v1/ask`(source=confluence) 1회 응답 시간·인용 유무, (6) Confluence 청크 샘플 5개의 본문 형식(접두어·코드블록·표)이 Task 2·6 규칙대로인지, (7) `run_eval --k 6` 재실행(OpenAPI 3문항이 13.8k 청크 속에서도 hit인지). 결함·성능 문제는 리드에게 보고.
+- **Validator 결과 `[검증]` — 결함 0, 성능 문제 0.** 규모: manifest 1,693문서, 13,812청크, `data/chroma` 183MB.
+  - (1) `init_context()` 1.6초, `reload()` 평균 1.60초. 워커 RSS **약 1.2GB에서 정체**(8회 반복 증가폭 350→…→4MB, 누수 아님). 피크는 단일 대입 설계상 구·신 인덱스 동시 보유 순간(약 1.16GB).
+  - (2) `/v1/reload` 1.48~1.62초(실서버). (3) 검색 0.02~0.05초(첫 호출 0.82초는 워밍업, 반복 시 0.018초). Task 9 명세의 "기동 시 재구성 1초 내" `[추측]`은 13.8k에서 1.6초로 정정.
+  - (4) 샘플 질의 상위 3의 title·breadcrumb·section이 위키 계층·질의 의미와 부합(`운영 배포 프로세스 > 2.1 dev 환경` 등) — Task 6 접두어 설계 실증.
+  - (5) `/check` ok·13812. `POST /v1/ask`(confluence) 22.0초, 인용 6개 전부 사용, sources url 실제 페이지. (6) 청크 샘플 5개 규칙 준수(접두어·표 보존·펜스 짝수). (7) `run_eval` 100% 유지. 회귀 308 passed.
+  - 주의: 포트 5010에 사용자 서버(PID 91149)가 이미 떠 있어 Validator는 그 서버에 측정, 종료하지 않음. `/v1/reload` 3회로 해당 워커 RSS 766→1,207MB(정체 구간 진입).
+- **리드 판단**: 계획서 완료 기준 ② Confluence 부분 충족(재실행 변경 0은 사용자 확인 대기). 운영 인계 메모 갱신 — **13.8k 청크 기준 워커 메모리 약 1.2GB → 컨테이너 한도 2GB 이상 권장**, 기동 지연 1.6초, confluence 질의 응답 22초(`[추측]` 컨텍스트 길이). README 반영은 후속 후보(사용자 판단).

@@ -134,3 +134,92 @@ def test_fetch_failure_shows_error_message():
 def test_health_failure_is_handled():
     script = _script()
     assert "상태 확인 실패" in script
+
+
+# --- Task 14: 인용 카드 강조 + 나머지 접기 ---
+
+def _function_body(name: str) -> str:
+    """스크립트에서 함수 본문만 잘라낸다(다른 함수의 코드에 오탐하지 않도록)."""
+    script = _script()
+    start = script.index(f"function {name}(")
+    depth, i = 0, script.index("{", start)
+    for j in range(i, len(script)):
+        if script[j] == "{":
+            depth += 1
+        elif script[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return script[start:j + 1]
+    raise AssertionError(f"{name} 본문을 찾지 못했다")
+
+
+def test_citation_regex_is_applied_to_answer_text():
+    """답변 본문에서 [n] 을 뽑아 인용 집합을 만든다."""
+    body = _function_body("renderSources")
+    assert re.search(r"/\\\[\(\\d\+\)\\\]/g", body), "인용 정규식 /\\[(\\d+)\\]/g 을 찾지 못했다"
+    assert "matchAll" in body
+    # 인용 파싱 대상은 답변 텍스트여야 한다 (카드 DOM 이 아니라)
+    assert re.search(r"renderSources\(\s*answerEl\s*,\s*data\s*,\s*answerEl\.textContent\s*\)", _script())
+
+
+def test_sources_are_split_into_cited_and_rest():
+    body = _function_body("renderSources")
+    assert re.search(r"const\s+cited\s*=\s*sources\.filter", body)
+    assert re.search(r"const\s+rest\s*=\s*sources\.filter", body)
+    assert "citedSet.has(s.index)" in body  # index 기준 판정
+
+
+def test_fallback_renders_everything_when_no_citation():
+    """인용을 하나도 못 찾으면 접지 않고 전부 펼친다(근거 손실 방지)."""
+    body = _function_body("renderSources")
+    assert re.search(r"if\s*\(\s*cited\.length\s*===\s*0\s*\)", body)
+    fallback = body[body.index("cited.length === 0"):]
+    fallback = fallback[:fallback.index("container.appendChild(buildCardGrid(cited")]
+    assert "buildCardGrid(sources" in fallback  # 전체를 렌더
+    assert "createElement('details')" not in fallback  # 접힘 영역을 만들지 않는다
+
+
+def test_details_is_created_only_when_rest_exists():
+    body = _function_body("renderSources")
+    assert re.search(r"if\s*\(\s*rest\.length\s*\)", body)
+    assert "createElement('details')" in body
+    assert "createElement('summary')" in body
+    assert re.search(r"기타 참고 \$\{rest\.length\}건", body)  # 정적 문자열 + 숫자만
+
+
+def test_card_number_is_not_renumbered():
+    """카드 라벨은 s.index 그대로 — 답변의 [n] 과 대응이 깨지면 안 된다."""
+    body = _function_body("buildCard")
+    assert re.search(r"\$\{s\.index\}", body), "카드 라벨이 s.index 를 쓰지 않는다"
+    # 순번 재부여 패턴이 없어야 한다
+    assert not re.search(r"\bi\s*\+\s*1\b", body)
+    assert not re.search(r"\bindex\s*\+\s*1\b", body)
+    assert not re.search(r"forEach\(\s*\(\s*\w+\s*,\s*\w+\s*\)", body)
+
+
+def test_cited_cards_get_highlight_class():
+    card_body = _function_body("buildCard")
+    assert re.search(r"cited\s*\?\s*'src cited'\s*:\s*'src'", card_body)
+    assert ".src.cited" in _html()  # 강조 스타일 존재
+    grid = _function_body("buildCardGrid")
+    assert "buildCard(s, cited)" in grid
+
+
+def test_cited_grid_is_rendered_before_details():
+    """강조 카드가 먼저, 접힘 영역이 나중에 붙는다."""
+    body = _function_body("renderSources")
+    assert body.index("buildCardGrid(cited, true)") < body.index("createElement('details')")
+
+
+def test_empty_sources_render_nothing():
+    body = _function_body("renderSources")
+    assert re.search(r"if\s*\(\s*!sources\.length\s*\)\s*return", body)
+
+
+def test_task14_keeps_dom_safety_rules():
+    """새 코드에도 XSS 규칙이 유지된다(카드·details 모두 createElement/textContent)."""
+    for name in ("buildCard", "buildCardGrid", "renderSources"):
+        body = _function_body(name)
+        assert "innerHTML" not in body
+        assert "insertAdjacentHTML" not in body
+    assert _function_body("buildCard").count("textContent") >= 3  # 링크·배지·스니펫

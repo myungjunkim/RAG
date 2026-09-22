@@ -245,8 +245,7 @@ def test_session_auth_is_set_from_credentials():
 def test_from_profile_falls_back_to_ini_token_without_env(monkeypatch):
     monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
     repo = ConfluenceRepository.from_profile()
-    assert repo.api_token == ""  # ini 의 api-token 은 빈 값(미커밋)
-    assert repo.email == ""
+    assert repo.api_token == ""  # 토큰은 env 로만 주입하고 ini 는 빈 값을 유지한다
     assert repo.base_url == "https://ihunet.atlassian.net/wiki"
     assert repo.space_key == "KUDOS"
 

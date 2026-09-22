@@ -18,12 +18,22 @@ LLM/임베딩은 로컬 Ollama 만 사용한다(사내 문서를 외부 API 로 
    안내 메시지를 출력하고 종료 코드 1 로 끝나며, **기존 인덱스와 manifest 는 건드리지 않는다**
    (`--full` 을 붙여도 초기화 전에 중단된다).
 
-2. Atlassian API 토큰: https://id.atlassian.com/manage-profile/security/api-tokens 에서 발급
+2. 설정 파일
+   ```bash
+   cp resources/config_local.ini.example resources/config_local.ini
+   ```
+   복사한 파일의 `[confluence] email` 에 Atlassian 계정 이메일을 입력한다.
+
+   `resources/config_local.ini` 는 `.gitignore` 대상이라 **커밋되지 않는다**(이메일·포트 등 개인 설정 보호).
+   저장소에는 템플릿인 `resources/config_local.ini.example` 만 들어간다.
+   다른 프로파일이 필요하면 같은 방식으로 `resources/config_<profile>.ini` 를 만들고
+   `--active-profile=<profile>` 로 선택한다.
+
+3. Atlassian API 토큰: https://id.atlassian.com/manage-profile/security/api-tokens 에서 발급
    ```bash
    export CONFLUENCE_API_TOKEN=...   # 커밋 금지
    ```
-   `resources/config_local.ini` 의 `[confluence] email` 에 Atlassian 계정 이메일을 입력한다.
-   토큰은 환경변수가 우선이며, ini 의 `api-token` 은 **비워 둔다**(자격 증명을 커밋하지 않는다).
+   토큰은 환경변수가 우선이며, ini 의 `api-token` 은 **비워 둔다**(자격 증명을 파일에 두지 않는다).
 
 ## 개발 환경
 

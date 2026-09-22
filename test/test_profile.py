@@ -1,3 +1,4 @@
+import configparser
 import os
 import subprocess
 import sys
@@ -97,12 +98,27 @@ def test_chroma_and_openapi_paths_are_resolved():
     assert os.path.isfile(openapi["sources-file"])
 
 
-def test_confluence_credentials_are_not_committed():
-    confluence = Profile().get_config("confluence")
+def test_ini_template_has_no_credentials():
+    """커밋 대상인 템플릿(config_local.ini.example)에 자격 증명이 들어 있지 않아야 한다.
+
+    개인 설정이 담기는 resources/config_local.ini 는 gitignore 대상이므로,
+    '커밋되지 않음' 검증의 대상은 템플릿 쪽이다.
+    """
+    template = f"{global_variable.PROJECT_RESOURCE_DIR}/config_local.ini.example"
+    assert os.path.isfile(template), "커밋되는 설정 템플릿이 없다"
+
+    parser = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(";",))
+    parser.read(template, encoding="utf-8")
+    confluence = parser["confluence"]
     assert confluence["email"] == ""
     assert confluence["api-token"] == ""
     assert confluence["base-url"] == "https://ihunet.atlassian.net/wiki"
     assert confluence["space-key"] == "KUDOS"
+
+
+def test_local_ini_keeps_api_token_empty():
+    """로컬 ini 는 email 이 개인 설정으로 채워질 수 있으나, 토큰은 항상 env 로만 넣는다."""
+    assert Profile().get_config("confluence")["api-token"] == ""
 
 
 def test_profile_is_singleton():
