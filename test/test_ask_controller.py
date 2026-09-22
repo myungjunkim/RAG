@@ -218,11 +218,11 @@ def test_check_degraded_when_collection_empty(client, monkeypatch):
     assert body == {"status": "degraded", "ollama": True, "chunk_count": 0}
 
 
-def test_openapi_lists_four_paths_and_hides_root(client):
+def test_openapi_lists_five_paths_and_hides_root(client):
     c, _ = client
     assert c.get("/docs").status_code == 200
     spec = c.get("/openapi.json").json()
-    assert sorted(spec["paths"]) == ["/check", "/v1/ask", "/v1/ask/stream", "/v1/reload"]
+    assert sorted(spec["paths"]) == ["/check", "/v1/ask", "/v1/ask/stream", "/v1/reload", "/v1/search"]
     assert "/" not in spec["paths"]  # include_in_schema=False
 
 
@@ -345,3 +345,149 @@ def test_builtin_connection_error_returns_503(client, monkeypatch):
     res = c.post("/v1/ask", json={"question": "q"})
     assert res.status_code == 503
     assert "Ollama" in res.json()["detail"]
+
+
+# --- agent-01: POST /v1/search (청크만 반환) ---
+
+class RecordingRetriever(StubRetriever):
+    """search 호출 인자를 기록하는 리트리버."""
+
+    def __init__(self, chunks):
+        super().__init__(chunks)
+        self.calls = []
+
+    def search(self, query, source="all", top_k=None):
+        self.calls.append((query, source, top_k))
+        return self._chunks
+
+
+def test_search_returns_chunks_in_order(client, monkeypatch):
+    c, _ = client
+    first = _chunk("1#0", "토큰은 헤더로 전달한다.")
+    second = Document(page_content="POST /v1/messages", metadata={
+        "chunk_id": "2#0", "doc_id": "2", "source": "openapi", "title": "메시지 등록", "url": "https://x/2",
+        "method": "POST", "path": "/v1/messages",
+    })
+    retriever = RecordingRetriever([first, second])
+    _context_with(monkeypatch, retriever, FakeListChatModel(responses=["쓰이지 않음"]))
+
+    res = c.post("/v1/search", json={"query": "메시지 등록", "source": "openapi", "top_k": 2})
+
+    assert res.status_code == 200
+    chunks = res.json()["chunks"]
+    assert [ch["chunk_id"] for ch in chunks] == ["1#0", "2#0"]
+    assert set(chunks[0]) == {"chunk_id", "title", "url", "source", "content", "metadata"}
+    assert chunks[1] == {
+        "chunk_id": "2#0", "title": "메시지 등록", "url": "https://x/2", "source": "openapi",
+        "content": "POST /v1/messages", "metadata": second.metadata,
+    }
+    assert retriever.calls == [("메시지 등록", "openapi", 2)]
+
+
+def test_search_defaults_source_all_and_top_k_none(client, monkeypatch):
+    c, _ = client
+    retriever = RecordingRetriever([_chunk("1#0", "본문")])
+    _context_with(monkeypatch, retriever, FakeListChatModel(responses=["쓰이지 않음"]))
+    assert c.post("/v1/search", json={"query": "q"}).status_code == 200
+    assert retriever.calls == [("q", "all", None)]
+
+
+def test_search_missing_metadata_fields_become_empty_string(client, monkeypatch):
+    c, _ = client
+    retriever = RecordingRetriever([Document(page_content="본문", metadata={})])
+    _context_with(monkeypatch, retriever, FakeListChatModel(responses=["쓰이지 않음"]))
+    chunk = c.post("/v1/search", json={"query": "q"}).json()["chunks"][0]
+    assert chunk == {"chunk_id": "", "title": "", "url": "", "source": "", "content": "본문", "metadata": {}}
+
+
+def test_search_empty_result_returns_empty_list(client, monkeypatch):
+    c, _ = client
+    _context_with(monkeypatch, RecordingRetriever([]), FakeListChatModel(responses=["쓰이지 않음"]))
+    res = c.post("/v1/search", json={"query": "없는 내용"})
+    assert res.status_code == 200 and res.json() == {"chunks": []}
+
+
+def test_search_validation(client):
+    c, _ = client
+    assert c.post("/v1/search", json={"query": ""}).status_code == 422
+    assert c.post("/v1/search", json={}).status_code == 422
+    assert c.post("/v1/search", json={"query": "q", "source": "x"}).status_code == 422
+    assert c.post("/v1/search", json={"query": "q", "top_k": 0}).status_code == 422
+    assert c.post("/v1/search", json={"query": "q", "top_k": 21}).status_code == 422
+
+
+def test_search_ollama_down_returns_503(client, monkeypatch):
+    c, _ = client
+    _context_with(monkeypatch, FailingRetriever(httpx.ConnectError("refused")),
+                  FakeListChatModel(responses=["쓰이지 않음"]))
+    res = c.post("/v1/search", json={"query": "q"})
+    assert res.status_code == 503
+    assert "Ollama" in res.json()["detail"]
+
+
+def test_search_embedding_timeout_returns_504(client, monkeypatch):
+    c, _ = client
+    _context_with(monkeypatch, FailingRetriever(httpx.ReadTimeout("timed out")),
+                  FakeListChatModel(responses=["쓰이지 않음"]))
+    assert c.post("/v1/search", json={"query": "q"}).status_code == 504
+
+
+# --- agent-01 추가 검증 (Validator): 경계값·소스 매핑·LLM 미사용 ---
+
+def test_search_query_length_boundary(client, monkeypatch):
+    """query 는 1~2000자. 2000자는 통과, 2001자는 422."""
+    c, _ = client
+    _context_with(monkeypatch, RecordingRetriever([]), FakeListChatModel(responses=["쓰이지 않음"]))
+    assert c.post("/v1/search", json={"query": "가" * 2000}).status_code == 200
+    assert c.post("/v1/search", json={"query": "가" * 2001}).status_code == 422
+
+
+@pytest.mark.parametrize("top_k", [1, 20])
+def test_search_top_k_boundary_accepted(client, monkeypatch, top_k):
+    c, _ = client
+    retriever = RecordingRetriever([])
+    _context_with(monkeypatch, retriever, FakeListChatModel(responses=["쓰이지 않음"]))
+    assert c.post("/v1/search", json={"query": "q", "top_k": top_k}).status_code == 200
+    assert retriever.calls == [("q", "all", top_k)]
+
+
+@pytest.mark.parametrize("source", ["all", "confluence", "openapi"])
+def test_search_forwards_each_allowed_source(client, monkeypatch, source):
+    c, _ = client
+    retriever = RecordingRetriever([])
+    _context_with(monkeypatch, retriever, FakeListChatModel(responses=["쓰이지 않음"]))
+    assert c.post("/v1/search", json={"query": "q", "source": source}).status_code == 200
+    assert retriever.calls == [("q", source, None)]
+
+
+def test_search_does_not_invoke_llm(client, monkeypatch):
+    """검색 엔드포인트는 LLM 을 호출하지 않는다(LLM 이 죽어 있어도 200)."""
+    c, _ = client
+    _context_with(monkeypatch, RecordingRetriever([_chunk("1#0", "본문")]), ConnectErrorModel())
+    res = c.post("/v1/search", json={"query": "q"})
+    assert res.status_code == 200
+    assert len(res.json()["chunks"]) == 1
+
+
+def test_search_model_not_found_returns_503(client, monkeypatch):
+    """임베딩 모델 미설치(ollama.ResponseError)도 503 으로 매핑된다."""
+    c, _ = client
+    from ollama import ResponseError
+
+    _context_with(monkeypatch, FailingRetriever(ResponseError('model "bge-m3" not found', 404)),
+                  FakeListChatModel(responses=["쓰이지 않음"]))
+    res = c.post("/v1/search", json={"query": "q"})
+    assert res.status_code == 503
+    assert "not found" in res.json()["detail"]
+
+
+def test_search_metadata_is_returned_verbatim(client, monkeypatch):
+    """metadata 는 Document.metadata 전체를 그대로 담는다(공통 키 외 소스별 키 포함)."""
+    c, _ = client
+    metadata = {"chunk_id": "9#0", "doc_id": "9", "source": "confluence", "title": "제목", "url": "https://x/9",
+                "breadcrumb": "공간 > 문서", "version": 3, "chunk_index": 0, "section": "개요"}
+    _context_with(monkeypatch, RecordingRetriever([Document(page_content="본문", metadata=metadata)]),
+                  FakeListChatModel(responses=["쓰이지 않음"]))
+    chunk = c.post("/v1/search", json={"query": "q"}).json()["chunks"][0]
+    assert chunk["metadata"] == metadata
+    assert chunk["chunk_id"] == "9#0" and chunk["source"] == "confluence"

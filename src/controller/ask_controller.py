@@ -7,7 +7,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from src.config.profile import Profile
-from src.dto.ask_dto import AskRequest, AskResponse, HealthResponse, ReloadResponse
+from src.dto.ask_dto import (AskRequest, AskResponse, HealthResponse, ReloadResponse, SearchChunk,
+                             SearchRequest, SearchResponse)
 from src.library.global_logger import GlobalLogger
 from src.repository.vector_store_repository import VectorStoreRepository
 from src.service import llm_factory
@@ -79,6 +80,28 @@ async def ask_stream(request: AskRequest):
 
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _to_search_chunk(doc) -> SearchChunk:
+    metadata = doc.metadata
+    return SearchChunk(
+        chunk_id=metadata.get("chunk_id", ""),
+        title=metadata.get("title", ""),
+        url=metadata.get("url", ""),
+        source=metadata.get("source", ""),
+        content=doc.page_content,
+        metadata=metadata,
+    )
+
+
+@router.post(f"/{__api_root}/search", response_model=SearchResponse, tags=["질의"])
+def search(request: SearchRequest):            # async 제거 — 임베딩 HTTP 1회를 스레드풀에서 실행
+    try:
+        docs = get_context().retriever.search(request.query, request.source, request.top_k)
+    except llm_factory.LLM_ERRORS as e:
+        logger.error("검색 실패: %s", e)
+        raise _translate_llm_error(e)
+    return SearchResponse(chunks=[_to_search_chunk(doc) for doc in docs])
 
 
 @router.post(f"/{__api_root}/reload", response_model=ReloadResponse, tags=["관리"])
