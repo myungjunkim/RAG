@@ -74,6 +74,14 @@
 ## 진행 기록 (계속)
 - 2026-09-22 Validator: 정적 테스트 +9(함수 본문 단위 검사, 재번호 부정 검사, 뮤테이션으로 유효성 확인). 317 passed. 사용자 서버 미접촉(5010 리스너 2개 = 리로더·워커 추정). 조건부 READY FOR REVIEW.
 
+## 2026-09-28 리드 결정: 육안 확인 Todo 철회 (주 UI가 LangGraph 로 이동)
+
+- 사용자 지시(2026-09-28): "이제 여기에서 UI로 띄울 거 아니고, LangGraph에서 띄워서 실행할 거야 — 5020으로 띄워서."
+- `[검증]` 실제 사용 UI는 별도 저장소 `/Users/mjkim/workspace/LangGraph`(ReAct 에이전트, `web.py` FastAPI + SSE, 포트 5020)다. 그 프로젝트는 RAG 의 `/v1/ask` 를 쓰지 않고 **`POST /v1/search` 로 원본 청크만** 받아 에이전트 LLM 이 답변·인용을 생성한다(해당 README). 커밋 `cf23538`(`/v1/search`)과 테스트의 `agent-01` 표기가 그 프로젝트 티켓 번호였다.
+- **결정**: 이 티켓의 마지막 완료 기준(사용자 육안 확인)을 **차단 요소에서 해제**한다. 근거: `resources/static/index.html` 은 주 사용 경로가 아니라 RAG 단독 점검용 보조 UI가 되었고, 후속 6에서 DOM 분류 층까지 `[검증]` 되어 코드 결함 가능성이 낮다. 육안 확인을 위해 사용자를 대기시킬 실익이 없다.
+- 티켓 상태: **READY FOR REVIEW**(조건부 해제). 보조 UI를 실제로 열어볼 일이 생기면 그때 확인하면 된다.
+- 삭제하지 않는 이유: RAG 서버 단독으로 검색·생성을 점검할 수 있는 유일한 화면이고, 유지 비용이 정적 파일 1개로 낮다. 제거는 별도 티켓에서 사용자가 판단.
+
 ## 범위 제외
 
 - 인용되지 않은 소스를 아예 숨기기(A)
@@ -86,3 +94,4 @@
 - 2026-09-22 리드: 사용자 결정 B. 명세 작성, Builder 지시.
 - 2026-09-22 Builder 완료: `renderSources(container, sources, answerText)` + `buildCard`/`buildCardGrid` 헬퍼, CSS 3줄. 39 passed(web_ui+controller), 전체 308 passed. `node --check` 통과, DOM 스텁 6케이스(인용 2/1/0개, 없는 index 무시, 전부 인용, 빈 sources) 동작 확인. 기존과 다른 점 2건 — (1) `answerText` 인자 추가(호출부에서 `answerEl.textContent` 전달), (2) 클래스 `.src.cited`.
 - 2026-09-22 리드: 2건 수용(명세 표기 정정). Validator에게 검증 지시.
+- 2026-09-28 후속 6 실데이터 사전 점검 `[검증]`(상세: `review-04-task12-13-final.md` 후속 6): 실서버 응답을 `index.html` 80~124행 원문 + node DOM 스텁으로 실행 → 인용 `{3}` → cited 1개(`src cited`, 정답 문서) / rest 5개(index 순서 유지·재번호 없음) / `<summary>` "기타 참고 5건". 인용 0개(NOT_FOUND) → `<details>` 미생성·전부 펼침. 동기·SSE 경로 분류 동일. **DOM 분류 층까지 결함 0** — 완료 기준 마지막 항목(육안)은 강조 스타일 시각 확인·클릭 펼침만 남음.

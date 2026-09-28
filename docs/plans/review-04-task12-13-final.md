@@ -164,6 +164,7 @@ def has_model(name: str) -> bool:
 3. sources 1위가 `POST /v1/dialogs/dialog`(기대 문서 2위) — 순위 튜닝: `bm25-weight`/`vector-weight`, RRF `id_key="chunk_id"`(리뷰 3 인계). Confluence 문항 포함 평가 후.
 4. Task 12 개선 후보: `error` 시 부분 답변 유지, 빈 답변 버블.
 5. `requirements.in` 3건, 계획서 동기화, 스펙 §7 문구, `.serena/` gitignore.
+6. (후속 6에서 추가) NOT_FOUND 답변에서 소스 카드 6장이 그대로 펼쳐지는 표시 — Task 14 명세대로의 의도된 폴백이라 결함은 아니나, "찾지 못했습니다" + 카드 6장이 혼동을 줄 수 있음. UI 문구·표시 전용 별도 티켓 후보.
 
 **PoC 종결 (2026-09-21).** 에이전트 작업 완료. 커밋·브라우저 확인·Confluence 인제스트는 사용자 영역.
 
@@ -204,3 +205,35 @@ def has_model(name: str) -> bool:
   - (5) `/check` ok·13812. `POST /v1/ask`(confluence) 22.0초, 인용 6개 전부 사용, sources url 실제 페이지. (6) 청크 샘플 5개 규칙 준수(접두어·표 보존·펜스 짝수). (7) `run_eval` 100% 유지. 회귀 308 passed.
   - 주의: 포트 5010에 사용자 서버(PID 91149)가 이미 떠 있어 Validator는 그 서버에 측정, 종료하지 않음. `/v1/reload` 3회로 해당 워커 RSS 766→1,207MB(정체 구간 진입).
 - **리드 판단**: 계획서 완료 기준 ② Confluence 부분 충족(재실행 변경 0은 사용자 확인 대기). 운영 인계 메모 갱신 — **13.8k 청크 기준 워커 메모리 약 1.2GB → 컨테이너 한도 2GB 이상 권장**, 기동 지연 1.6초, confluence 질의 응답 22초(`[추측]` 컨텍스트 길이). README 반영은 후속 후보(사용자 판단).
+
+### 종결 후 후속 5: `requirements.in` 직접 의존성 3건 명시 (2026-09-22, 사용자 "허가")
+- 배경: 코드가 직접 import하는 `langchain-text-splitters`(chunk_service), `langchain-classic`(retriever_service), `ollama`(llm_factory)가 `requirements.in`에 없고 전이 의존성으로만 설치됨(Task 6·9·리뷰 4에서 누적 권고). 상위 패키지(특히 sunset 예고된 `langchain-community`) 갱신 시 조용히 빠질 위험. 사용자 허가로 설정 파일 변경 진행.
+- **Builder 작업**: (1) `requirements.in`에 3줄 추가. (2) `pip-compile --no-index --output-file=requirements.txt requirements.in`(기존 헤더 명령과 동일). (3) `git diff requirements.txt` — 세 패키지 `# via`에 `-r requirements.in` 추가 외 **버전 변경 0**(1.1.2 / 1.0.8 / 0.6.2 유지). 다른 버전이 움직이면 중단·보고. (4) `pip install -r requirements.txt` → already satisfied. (5) 전체 pytest green. (6) README "의존성 메모 (미결정 사항)"를 명시 완료로 갱신. 커밋 금지(브랜치 main).
+- **Validator**: `pip check`, `# via -r requirements.in` 3건 확인, 버전 불변, 전체 green·소켓 차단.
+- Builder 완료 `[검증]`: `requirements.in` +3, `requirements.txt` via 주석 3곳만(`9 3`, 버전 라인 변경 0 — 1.1.2/1.0.8/0.6.2 유지), `pip install` already satisfied, `pip check` 정상, README 의존성 메모 "명시 완료"로 갱신. 317 passed.
+- **정정(리드 오류)**: 리뷰 4 N-6·후속 5 지시의 "`pip-compile --no-index …`(헤더와 동일하게)"는 잘못 — `--no-index`는 pip-tools 7.6.1이 "인덱스 URL을 산출물에 넣지 않음"을 헤더에 자동 기록하는 표기이며 **플래그로 넘기면 `DistributionNotFound`로 실패**한다. 올바른 재실행 명령은 `pip-compile --output-file=requirements.txt requirements.in`(생성 헤더는 그대로 `--no-index` 포함). 추가 사실 `[검증]`: pip-tools는 **기존 출력 파일의 핀을 존중**하므로 반드시 실제 `requirements.txt`를 대상으로 실행해야 버전이 고정된다(임시 파일 대상 실행 시 13개 패키지 업그레이드 관측).
+- **후속 5-b(Builder)**: README "개발 환경"의 pip-compile 예시에서 `--no-index` 제거 + "기존 `requirements.txt`를 대상으로 실행해야 핀이 유지된다" 한 문장. 그 외 변경 없음.
+- Builder 5-b 완료 `[검증]`: README 명령 `pip-compile --output-file=requirements.txt requirements.in`으로 정정, 핀 존중·헤더 표기 설명 문장 교체. 317 passed. Validator 최종 확인 대기.
+- Validator 최종 `[검증]`: `pip check` 정상, `# via -r requirements.in` 3건, **120항목 핀 단위 비교 — 추가·제거·버전 변경 0**, 설치↔txt 누락·불일치 0, 317 passed(소켓 차단 동일), 진입점 3종 정상. README 문구는 격리 사본에서 실행으로 검증 — 플래그 없는 명령 성공·헤더 `--no-index` 자동 기록·재컴파일 결과 동일(핀 존중)·플래그 붙이면 실패. 비차단: README 표 `ollama` 비고 "via langchain-ollama"는 사실이나 "직접 명시"로 갱신하면 더 정확(변경 없음). **후속 5 종결 — READY FOR REVIEW.**
+- 커밋 대상(사용자): `requirements.in`, `requirements.txt`, `README.md`, `docs/plans/conventions.md`, `docs/plans/review-04-task12-13-final.md`.
+
+### 종결 후 후속 6: 사용자 확인 대기 항목의 대리 검증 (2026-09-28, 사용자 "니가 확인해줘")
+- 대상: 사용자 Todo 중 에이전트가 대신 확인 가능한 범위 — (a) Confluence 인제스트 재실행 변경 0(계획서 완료 기준 ②), (b) Task 14 인용 카드 분류가 **실데이터**로 기대대로 동작하는지, (c) 현재 워킹 트리 기준 전체 회귀.
+- 리드 판단: 브라우저 육안(Task 14 강조 스타일·접힘 클릭, 계획서 ③ 스트리밍 표시)은 브라우저 자동화 의존성이 없어 대체 불가 → **사용자 영역 유지**. 대신 실서버 응답을 `renderSources`에 넣어 분류 결과(cited/rest 개수·index)를 확인해 "육안 확인 전 마지막 사전 점검"으로 삼는다. 커밋·git 정리(Todo 1·5·6)는 사용자 영역.
+- **Validator 작업**(순서, 코드·설정·ini·`data/` 변경 금지, 커밋 금지):
+  1. `pytest --active-profile=local -q` → 317 passed 기준선 확인(워킹 트리에 후속 5 미커밋 변경 포함).
+  2. (a) 셸에 `CONFLUENCE_API_TOKEN`이 있는지 확인(값 출력 금지, 설정 여부만). **없으면 (a)는 `[미확인]`으로 보고하고 건너뜀** — 토큰 요청·ini 기록 금지. 있으면 `python ingest.py --source confluence` 실행 → `[confluence] 추가 N / 갱신 N / 삭제 N` 줄과 소요 시간 보고. 기대: 추가 0/갱신 0/삭제 0(위키 수정이 있었다면 갱신 >0도 정상 — 갱신 페이지 title 몇 개 첨부). 실행 후 `/check`의 `chunk_count`가 manifest 청크 합과 일치하는지 확인.
+  3. (b) 포트 5010 점유 확인 — 사용자 서버가 떠 있으면 그 서버를 사용하고 종료하지 않음, 없으면 자체 기동 후 종료. `POST /v1/ask` `{"question":"주제 생성 API 스펙 페이지 찾아줘","source":"confluence"}` → answer의 `[n]` 집합과 sources index 목록 보고. 그 응답을 `index.html`의 `renderSources(container, sources, answerText)`에 node DOM 스텁(Task 14 Builder 방식 재사용)으로 넣어 **cited 카드 index / rest 개수 / `<details>` summary 문구** 보고. 추가로 `POST /v1/ask` `{"question":"존재하지않는내용XYZ임의문자열","source":"openapi"}` → 인용 0개 또는 NOT_FOUND 시 `<details>` 미생성 확인.
+  4. `/v1/ask/stream` 같은 질문 1회 → 프레임 순서(token… → sources → done), 조립 answer가 동기 응답과 길이 동일한지(계획서 ③ 서버 층 재확인).
+  5. 보고: 각 항목 `[검증]`/`[미확인]` 구분, 결함이 있으면 RETURN이 아니라 **리드에게 보고**.
+- **Validator 결과 (2026-09-28) — 결함 0, 항목 1·3·4 PASS / 항목 2 `[미확인]`**
+  1. `[검증]` 전체 **333 passed / 5 deselected**(실패 0, 1.48초). 명세 기대치 317은 낡은 값 — 커밋 `cf23538`(`POST /v1/search`)이 `test_ask_controller.py` +150행을 포함해 317+16=333. **이후 기준선은 333.**
+  2. `[미확인]` `CONFLUENCE_API_TOKEN` 미설정(셸·`.zshrc`류·`.env` 모두 없음, ini `api-token=` 빈 값 유지) → 명세대로 인제스트 미실행. 보조 근거 `[검증]`: 실서버 `/check` `chunk_count=13812` = `manifest.json` 집계(문서 1,693 / openapi 199 + confluence 13,613) **완전 일치** → manifest·Chroma 정합 상태. 원격 위키 변경 여부만 미확인. **계획서 완료 기준 ② 잔여는 사용자 영역 유지.**
+  3. `[검증]` Task 14 실데이터: "주제 생성 API 스펙 페이지 찾아줘"(confluence, 6.63초) → answer 158자, 인용 집합 `{3}`, sources 6건. `index.html` 80~124행 원문을 node DOM 스텁에서 실행 → **cited 1개(`[3]` = 정답 문서 "API 스펙 - 주제(GPTs) 생성 API", 클래스 `src cited`) / rest 5개(`[1][2][4][5][6]`, 원래 index 순서·재번호 없음) / `<summary>` "기타 참고 5건"**. 인용 0개 케이스(NOT_FOUND 문구) → **`<details>` 미생성, 6건 전부 펼침, `cited` 없음** = 명세 폴백 그대로. 파일 수정 0.
+  4. `[검증]` `/v1/ask/stream` 77프레임 = `token`×75 → `sources` → `done`(순서 위반 0), 조립 answer 158자가 동기 응답과 **문자열 완전 동일**, sources index·title도 동일. 스트림 payload의 DOM 분류 결과도 동기와 동일. **계획서 ③ 서버·API·DOM 분류 층 사전 점검 완료** — 남은 것은 브라우저 표시뿐.
+  - 제약 준수 `[검증]`: 프로덕션·설정·ini·`data/` 변경 0, 커밋 0, 토큰 값 미출력, 사용자 서버(PID 76326) 미종료. 최종 `git status` = 시작 시점과 동일(M 5건). 검증 스크립트는 스크래치패드에만 존재.
+- **리드 판단 (2026-09-28)**: 후속 6 **종결 — READY FOR REVIEW**. 결함 0이므로 티켓 재개 없음.
+  - 기준선 숫자를 **333**으로 갱신(비차단 의견 1 수용). 이후 문서에 기준선을 적을 때 커밋 해시를 병기한다 — 현재 기준선 = `cf23538` + 미커밋 5건.
+  - 비차단 의견 2(node 실행 테스트를 CI에 넣지 않음) **수용** — 정적 테스트 9건 + 이번 1회성 실데이터 실행으로 충분. node 의존성 추가는 PoC 범위 밖.
+  - 비차단 의견 3(NOT_FOUND인데 카드 6장 노출) — Task 14 명세대로의 **의도된 동작**이므로 결함 아님. 사용자 혼동 가능성은 인정되나 UI 문구 변경은 별도 티켓. **후속 후보로만 기록**(아래 목록 6번).
+  - 미해결 사용자 영역 3건: (a) Confluence 재인제스트 변경 0(토큰), (b) 브라우저 육안, (c) 커밋.

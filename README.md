@@ -42,11 +42,12 @@ Python 3.12 기준이다.
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install pip-tools
-pip-compile --no-index --output-file=requirements.txt requirements.in   # requirements.in 변경 시
+pip-compile --output-file=requirements.txt requirements.in   # requirements.in 변경 시
 pip install -r requirements.txt
 ```
 
-`pip-compile` 옵션은 `requirements.txt` 헤더에 기록된 명령과 동일하게 유지한다.
+기존 `requirements.txt` 를 대상으로 실행해야 pip-tools 가 현재 핀을 존중해 버전이 고정된다
+(헤더의 `--no-index` 는 자동 기록 표기이며 실행 플래그가 아니다).
 
 운영 프로파일이 필요하면 `resources/config_<profile>.ini` 를 만들고 `--active-profile=<profile>` 로
 선택한다(예: `host=0.0.0.0`, `reload=False`).
@@ -54,17 +55,18 @@ pip install -r requirements.txt
 이하 모든 명령은 가상환경이 활성화된 상태(프롬프트 앞 `(.venv)`)를 전제한다. 활성화하지 않으면
 `python` 명령이 없거나 `ModuleNotFoundError` 가 난다.
 
-### 의존성 메모 (미결정 사항)
+### 의존성 메모
 
-아래 3개는 코드가 **직접 import** 하지만 `requirements.in` 에는 없고 다른 패키지의 전이 의존성으로만
-설치되어 있다. 상위 패키지의 의존성 트리가 바뀌면 조용히 깨질 수 있어 직접 명시를 권고하지만,
-의존성 파일 변경은 사용자 결정 사항이라 **미반영 상태**다.
+아래 3개는 코드가 **직접 import** 하므로 `requirements.in` 에 명시되어 있다. 원래는 다른 패키지의
+전이 의존성으로만 설치되던 것들로, 상위 패키지의 의존성 트리가 바뀌면 조용히 빠질 수 있어 직접 고정했다.
 
-| 패키지 | 현재 경로 | 사용처 |
+| 패키지 | 사용처 | 원래 전이 경로 |
 |---|---|---|
-| `langchain-text-splitters` | via `langchain-classic` | `src/service/chunk_service.py` |
-| `langchain-classic` | via `langchain-community` | `src/service/retriever_service.py` |
-| `ollama` | via `langchain-ollama` | `src/service/llm_factory.py` (`LLM_ERRORS`) |
+| `langchain-text-splitters` | `src/service/chunk_service.py` | via `langchain-classic` |
+| `langchain-classic` | `src/service/retriever_service.py` | via `langchain-community` |
+| `ollama` | `src/service/llm_factory.py` (`LLM_ERRORS`) | via `langchain-ollama` |
+
+새 라이브러리를 직접 import 하게 되면 같은 방식으로 `requirements.in` 에 추가한 뒤 `pip-compile` 한다.
 
 ## 인제스트
 

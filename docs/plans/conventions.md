@@ -59,6 +59,35 @@
 - 리뷰 3: Task 9~11 대상. 2026-09-21 Task 11 Validator 검증과 **병행 착수**(Task 9·10 코드 확정, Task 11은 계획서 대비 3곳 차이라 재리뷰 위험 낮음. Validator RETURN 시 해당 부분만 재리뷰). 리뷰어에게 서버 기동·포트 사용 금지(Validator 실기동과 충돌 방지). 종결 후 현황 보고 → Task 12 지시. **2026-09-21 종결**(`review-03-task9-11.md`).
 - 리뷰 4(최종): Task 12~13 + 스펙 전체 대조 + 계획서 전체 완료 기준. **2026-09-21 종결**(`review-04-task12-13-final.md`). 전 13 Task 리뷰 완료, 307 passed. 모델 조건 항목 7건은 2026-09-21 `bge-m3`·`qwen3:14b` 설치 후 Validator 재실행 **전부 PASS** → 계획서 완료 기준 4/4 충족(브라우저 육안만 사용자). **PoC 종결.**
 
+## 2-5. 브랜치·커밋 상태 (2026-09-22)
+
+- 사용자 커밋 `cb4c9e7`(feat/kudos-rag-poc) → `main` fast-forward → `origin/main` 푸시 완료. Task 1~14 산출물·`docs/plans/`·리뷰 1~4 기록 전부 포함. `resources/config_local.ini`는 추적 해제(템플릿 `.example`만 커밋, 이메일 미포함 `[검증]` rename 100%).
+- 이후 작업은 **main 단일 브랜치**(사용자 결정, 개인 프로젝트). 명세·티켓은 main 기준.
+- 정리 후보(사용자): `.idea/`·`.serena/` 추적 해제, GitHub 기본 브랜치를 main으로 변경, 기능 브랜치 삭제.
+
+## 2-6. 상위 소비자 프로젝트와 이 저장소의 경계 (2026-09-28)
+
+```
+LangGraph (5020)  ← 실제 사용 UI. ReAct 에이전트가 답변·인용 생성
+   │ search_confluence / search_openapi (도구)
+   ▼ POST /v1/search        ← 원본 청크만 반환
+RAG (5010)        ← 이 저장소. 검색 백엔드
+```
+
+- `[검증]` 실제 사용 화면은 별도 저장소 `/Users/mjkim/workspace/LangGraph`(`web.py`, 포트 5020)이며, **RAG 의 `/v1/ask`·`/v1/ask/stream`·`resources/static/index.html` 을 쓰지 않는다.** 커밋 `cf23538`(`POST /v1/search`)과 `test_ask_controller.py` 의 `agent-01` 표기는 그 저장소의 티켓 번호다.
+- **경계**: LangGraph 저장소는 이 세션·이 문서 체계의 작업 범위가 **아니다**(자체 `docs/plans/agent-NN-*.md` 와 전용 세션으로 운영). 그쪽 티켓에 대한 지시·구현·검증을 이 세션에서 수행하지 않는다. 2026-09-28 시점 `agent-09`(영구 SQLite 체크포인터)가 다른 세션에서 **진행 중** — 같은 파일을 동시에 고치지 않도록 주의.
+- 이 저장소에서 지켜야 할 것: **`POST /v1/search` 의 응답 계약**(`chunk_id/title/url/source/content/metadata`)은 상위 소비자가 의존하는 공개 인터페이스다. 변경 시 CLAUDE.md §8 breaking change 절차를 따르고 LangGraph 저장소 영향을 먼저 확인한다.
+- `index.html`·`/v1/ask` 는 삭제하지 않고 **RAG 단독 점검용 보조 경로**로 유지한다(근거: `task-14-ui-cited-sources.md` 2026-09-28 결정).
+
+## 2-7. 테스트 기준선 (커밋 해시 병기)
+
+| 시점 | 기준선 | 비고 |
+|---|---|---|
+| `cf23538` + 미커밋 5건 (2026-09-28) | **333 passed / 5 deselected** | 후속 6 Validator 실측 |
+| `cb4c9e7` (리뷰 4 종결) | 307 → 317 passed | 후속 5 반영 후 317 |
+
+기준선 숫자를 문서에 적을 때는 **커밋 해시를 함께 적는다**(후속 6에서 317↔333 불일치 발생 — 명세의 기대치가 커밋 하나 뒤처져 있었다).
+
 ## 3. 리드의 명세 작성 원칙 (재확인)
 
 - 명세에는 계획서 코드를 다시 붙이지 않고, 인터페이스·동작 표·검증 전략만 적는다. 코드가 필요하면 계획서 Step 번호를 참조한다.
